@@ -65,7 +65,11 @@ from .serializer import Serializer
 LOG = logging.getLogger(__name__)
 
 # WebSocket subprotocol used for the GraphQL.
-GRAPHQL_WS_SUBPROTOCOL = "graphql-ws"
+# GRAPHQL_WS_SUBPROTOCOL = "graphql-ws"
+# GRAPHQL_WS_SUBPROTOCOL ='graphql-ws'
+GRAPHQL_WS_SUBPROTOCOL = 'graphql-transport-ws'
+
+
 
 
 class GraphqlWsConsumer(ch_websocket.AsyncJsonWebsocketConsumer):
@@ -226,6 +230,7 @@ class GraphqlWsConsumer(ch_websocket.AsyncJsonWebsocketConsumer):
         # starting with Python 3.7 it is a bytes. This can be a proper
         # change or just a bug in the Channels to be fixed. So let's
         # accept both variants until it becomes clear.
+
         assert GRAPHQL_WS_SUBPROTOCOL in (
             (sp.decode() if isinstance(sp, bytes) else sp)
             for sp in self.scope["subprotocols"]
@@ -306,12 +311,14 @@ class GraphqlWsConsumer(ch_websocket.AsyncJsonWebsocketConsumer):
         msg_type = content["type"].upper()
 
         if msg_type == "CONNECTION_INIT":
-            task = self._on_gql_connection_init(payload=content["payload"])
+            # task = self._on_gql_connection_init(payload=content["payload"])
+            task = self._on_gql_connection_init(payload=content.get("payload", {}))
 
         elif msg_type == "CONNECTION_TERMINATE":
             task = self._on_gql_connection_terminate()
 
-        elif msg_type == "START":
+        # elif msg_type == "START":
+        elif msg_type == "SUBSCRIBE":
             op_id = content["id"]
             # Create and lock a mutex for this particular operation id,
             # so STOP processing for the same operation id will wail
@@ -328,14 +335,16 @@ class GraphqlWsConsumer(ch_websocket.AsyncJsonWebsocketConsumer):
             async def on_start():
                 try:
                     await self._on_gql_start(
-                        operation_id=op_id, payload=content["payload"]
+                        # operation_id=op_id, payload=content["payload"]
+                        operation_id=op_id, payload=content.get("payload", {})
                     )
                 finally:
                     op_lock.release()
 
             task = on_start()
 
-        elif msg_type == "STOP":
+        # elif msg_type == "STOP":
+        elif msg_type == "COMPLETE":
             op_id = content["id"]
 
             async def on_stop():
@@ -453,7 +462,8 @@ class GraphqlWsConsumer(ch_websocket.AsyncJsonWebsocketConsumer):
         # unsubscription.
         await asyncio.wait(
             [
-                self.receive_json({"type": "stop", "id": sid})
+                # self.receive_json({"type": "stop", "id": sid})
+                self.receive_json({"type": "complete", "id": sid})
                 for sid in self._sids_by_group[group]
             ]
         )
@@ -855,7 +865,8 @@ class GraphqlWsConsumer(ch_websocket.AsyncJsonWebsocketConsumer):
 
         await self.send_json(
             {
-                "type": "data",
+                # "type": "data",
+                "type": "next",
                 "id": operation_id,
                 "payload": {
                     "data": data,
